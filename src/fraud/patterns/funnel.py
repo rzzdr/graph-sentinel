@@ -36,7 +36,10 @@ class FunnelPattern(FraudPattern):
         roles["mule_funnel"] = funnel_ids
         roles["beneficiary"] = beneficiary_ids
 
-        normal_ids = [aid for aid in all_account_ids if aid not in mule_ids]
+        mule_set = set(mule_ids)
+        normal_ids = [aid for aid in all_account_ids if aid not in mule_set]
+        if not normal_ids:
+            return transactions, roles
 
         for funnel_id in funnel_ids:
             n_inbound = max(

@@ -67,7 +67,11 @@ class GraphEmbeddingEngine:
         node_idx = {n: i for i, n in enumerate(nodes)}
         n = len(nodes)
 
-        cooccurrence = np.zeros((n, n), dtype=np.float32)
+        from scipy import sparse
+
+        rows: list[int] = []
+        cols: list[int] = []
+        vals: list[float] = []
 
         for node in nodes:
             for _ in range(self.num_walks):
@@ -77,9 +81,12 @@ class GraphEmbeddingEngine:
                     window = idx_walk[max(0, i - 5) : i + 6]
                     for wj in window:
                         if wi != wj:
-                            cooccurrence[wi, wj] += 1.0
+                            rows.append(wi)
+                            cols.append(wj)
+                            vals.append(1.0)
 
-        cooccurrence = np.log1p(cooccurrence)
+        cooccurrence = sparse.coo_matrix((vals, (rows, cols)), shape=(n, n)).tocsr()
+        cooccurrence.data = np.log1p(cooccurrence.data)
 
         try:
             from sklearn.decomposition import TruncatedSVD

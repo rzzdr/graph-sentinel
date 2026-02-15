@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "graph-sentinel"
-version = "0.1.0"
+version = "0.1.2"
 description = "Production-grade graph-based mule account detection with synthetic financial transaction simulation"
 authors = ["Graph Sentinel Team"]
 license = "MIT"

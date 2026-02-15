@@ -45,12 +45,13 @@ class CircularFlowPattern(FraudPattern):
         n_cycles = max(1, int(rng.integers(2, 6)))
 
         for cycle_round in range(n_cycles):
-            day_offset = int(
-                rng.integers(
-                    self.sim_days // 4 + cycle_round * 5,
-                    min(self.sim_days * 3 // 4, self.sim_days - 1),
-                )
-            )
+            low = self.sim_days // 4 + cycle_round * 5
+            high = min(self.sim_days * 3 // 4, self.sim_days - 1)
+            if low >= high:
+                low = max(0, high - 1)
+            if low >= high:
+                break
+            day_offset = int(rng.integers(low, high))
             base_time = self.sim_start + timedelta(days=day_offset)
             base_amount = float(rng.lognormal(6.5, 0.6))
 

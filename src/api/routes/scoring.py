@@ -53,6 +53,7 @@ async def get_top_risk_scores(
     limit: int = 50,
     min_score: float = 0.0,
 ) -> list[RiskScoreResponse]:
+    limit = min(limit, 1000)
     scores = _load_risk_scores()
     filtered = (
         scores.filter(pl.col("risk_score") >= min_score)

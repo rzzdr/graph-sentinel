@@ -39,7 +39,7 @@ class LayeringPattern(FraudPattern):
             )
         )
 
-        normal_ids = [aid for aid in all_account_ids if aid not in mule_ids]
+        normal_ids = [aid for aid in all_account_ids if aid not in set(mule_ids)]
         if not normal_ids:
             return transactions, roles
 
@@ -54,12 +54,13 @@ class LayeringPattern(FraudPattern):
         n_chains = max(1, int(rng.integers(2, 5)))
 
         for chain_round in range(n_chains):
-            day_offset = int(
-                rng.integers(
-                    self.sim_days // 3 + chain_round * 7,
-                    min(self.sim_days * 3 // 4, self.sim_days - 1),
-                )
-            )
+            low = self.sim_days // 3 + chain_round * 7
+            high = min(self.sim_days * 3 // 4, self.sim_days - 1)
+            if low >= high:
+                low = max(0, high - 1)
+            if low >= high:
+                break
+            day_offset = int(rng.integers(low, high))
             base_time = self.sim_start + timedelta(days=day_offset)
 
             initial_amount = float(rng.lognormal(7.0, 0.7))

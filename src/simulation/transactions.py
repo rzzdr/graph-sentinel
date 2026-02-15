@@ -120,10 +120,12 @@ class TransactionGenerator:
         return df
 
     def _pick_receiver(self, sender_id: str, account_ids: list[str]) -> str:
-        while True:
+        for _ in range(100):
             idx = int(self.rng.integers(0, len(account_ids)))
             if account_ids[idx] != sender_id:
                 return account_ids[idx]
+        # Fallback: if only one account exists, return it anyway
+        return account_ids[0]
 
     def _sample_amount_for_type(self, txn_type: str, profile: TransactionProfile) -> float:
         base_mu = profile.amount_mu

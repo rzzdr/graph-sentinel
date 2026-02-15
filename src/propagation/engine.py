@@ -124,9 +124,17 @@ class RiskPropagationEngine:
         nodes: list[str],
         node_idx: dict[str, int],
     ) -> np.ndarray:
-        """Build a column-normalized transition matrix with edge-weight awareness."""
+        """Build a column-normalized transition matrix with edge-weight awareness.
+
+        Uses sparse representation internally for memory efficiency on large graphs,
+        converting to dense only for the final matrix-vector products.
+        """
+        from scipy import sparse
+
         n = len(nodes)
-        W = np.zeros((n, n), dtype=np.float64)
+        rows: list[int] = []
+        cols: list[int] = []
+        vals: list[float] = []
 
         for u, v, data in graph.edges(data=True):
             if u in node_idx and v in node_idx:
@@ -135,10 +143,19 @@ class RiskPropagationEngine:
                 edge_strength = np.log1p(weight) * np.log1p(freq)
 
                 i, j = node_idx[v], node_idx[u]
-                W[i, j] = edge_strength
+                rows.append(i)
+                cols.append(j)
+                vals.append(edge_strength)
 
                 ri, rj = node_idx[u], node_idx[v]
-                W[ri, rj] = max(W[ri, rj], edge_strength * 0.5)
+                rows.append(ri)
+                cols.append(rj)
+                vals.append(edge_strength * 0.5)
+
+        W = sparse.coo_matrix((vals, (rows, cols)), shape=(n, n)).tocsc()
+
+        # For duplicate entries (same row/col added twice), sum them
+        W = W.toarray()
 
         col_sums = W.sum(axis=0)
         col_sums[col_sums == 0] = 1.0

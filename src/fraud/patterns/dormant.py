@@ -33,12 +33,20 @@ class DormantActivationPattern(FraudPattern):
             return transactions, roles
 
         roles["mule_dormant"] = list(mule_ids)
-        normal_ids = [aid for aid in all_account_ids if aid not in mule_ids]
+        mule_set = set(mule_ids)
+        normal_ids = [aid for aid in all_account_ids if aid not in mule_set]
+        if not normal_ids:
+            return transactions, roles
 
         for mule_id in mule_ids:
+            dormant_high = min(self.sim_days - 10, 150)
+            if dormant_high <= 60:
+                dormant_sample = min(60, max(1, dormant_high))
+            else:
+                dormant_sample = int(rng.integers(60, dormant_high))
             dormant_days = max(
                 self.config.dormant_inactivity_days,
-                int(rng.integers(60, min(self.sim_days - 10, 150))),
+                dormant_sample,
             )
             activation_day = dormant_days + int(rng.integers(1, 5))
 

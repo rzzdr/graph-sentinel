@@ -16,6 +16,7 @@ async def get_alerts(
     limit: int = 50,
     min_score: float = 75.0,
 ) -> AlertListResponse:
+    limit = min(limit, 1000)
     settings = Settings()
     path = settings.output_dir / "risk_scores.parquet"
 
@@ -58,9 +59,13 @@ async def alert_stats() -> dict[str, object]:
 
     thresholds = {"critical": 90.0, "high": 75.0, "medium": 50.0}
     by_level = {}
+    prev_threshold = float("inf")
     for level, threshold in thresholds.items():
-        count = scores.filter(pl.col("risk_score") >= threshold).height
+        count = scores.filter(
+            (pl.col("risk_score") >= threshold) & (pl.col("risk_score") < prev_threshold)
+        ).height
         by_level[level] = count
+        prev_threshold = threshold
 
     return {
         "total_accounts": scores.height,

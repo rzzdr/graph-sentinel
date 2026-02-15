@@ -37,7 +37,8 @@ class DeviceSharingPattern(FraudPattern):
         shared_device_id = uuid.uuid4().hex[:12]
         self._shared_device_ids = {mid: shared_device_id for mid in mule_ids}
 
-        normal_ids = [aid for aid in all_account_ids if aid not in mule_ids]
+        mule_set = set(mule_ids)
+        normal_ids = [aid for aid in all_account_ids if aid not in mule_set]
 
         for i in range(len(mule_ids) - 1):
             sender = mule_ids[i]

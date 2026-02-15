@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter
 
 from src.api.schemas import SimulationRequest, SimulationResponse
@@ -21,8 +23,10 @@ async def run_simulation(request: SimulationRequest) -> SimulationResponse:
     from src.simulation.orchestrator import SimulationOrchestrator
 
     orchestrator = SimulationOrchestrator(settings)
-    accounts, transactions = orchestrator.run()
-    orchestrator.save()
+
+    loop = asyncio.get_running_loop()
+    accounts, transactions = await loop.run_in_executor(None, orchestrator.run)
+    await loop.run_in_executor(None, orchestrator.save)
 
     import polars as pl
 

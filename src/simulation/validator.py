@@ -31,6 +31,12 @@ class SimulationValidator:
 
         from scipy import stats
 
+        if len(log_amounts) < 8:
+            return {
+                "passed": False,
+                "reason": f"insufficient positive-amount transactions ({len(log_amounts)})",
+            }
+
         _, p_value = stats.normaltest(log_amounts[:10000])
         mean = float(np.mean(log_amounts))
         std = float(np.std(log_amounts))
