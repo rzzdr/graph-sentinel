@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import networkx as nx
 import polars as pl
 import structlog
@@ -20,12 +22,29 @@ class FraudSpecificFeatureExtractor:
         if not nodes:
             return pl.DataFrame(schema={"account_id": pl.Utf8})
 
+        t0 = time.perf_counter()
         circularity = self._compute_circularity_scores(graph)
+        logger.info("circularity_done", elapsed_s=round(time.perf_counter() - t0, 2))
+
+        t0 = time.perf_counter()
         funnel = self._compute_funnel_scores(graph)
+        logger.info("funnel_done", elapsed_s=round(time.perf_counter() - t0, 2))
+
+        t0 = time.perf_counter()
         layering = self._compute_layering_depth(graph)
+        logger.info("layering_done", elapsed_s=round(time.perf_counter() - t0, 2))
+
+        t0 = time.perf_counter()
         risk_prop = self._compute_risk_propagation(graph)
+        logger.info("risk_propagation_done", elapsed_s=round(time.perf_counter() - t0, 2))
+
+        t0 = time.perf_counter()
         device_cluster = self._compute_device_cluster_scores(accounts)
+        logger.info("device_cluster_done", elapsed_s=round(time.perf_counter() - t0, 2))
+
+        t0 = time.perf_counter()
         chain_lengths = self._compute_suspicious_chain_length(graph)
+        logger.info("chain_length_done", elapsed_s=round(time.perf_counter() - t0, 2))
 
         records: list[dict[str, object]] = []
         for node in nodes:
@@ -45,25 +64,34 @@ class FraudSpecificFeatureExtractor:
         logger.info("fraud_specific_features_extracted", rows=df.height)
         return df
 
-    def _compute_circularity_scores(self, graph: nx.DiGraph) -> dict[str, float]:
+    def _compute_circularity_scores(
+        self, graph: nx.DiGraph, *, max_cycles: int = 50_000, timeout_s: float = 120.0
+    ) -> dict[str, float]:
         scores: dict[str, float] = {n: 0.0 for n in graph.nodes()}
 
         try:
-            cycles = list(nx.simple_cycles(graph, length_bound=8))
+            cycle_participation: dict[str, int] = {}
+            deadline = time.perf_counter() + timeout_s
+            for count, cycle in enumerate(nx.simple_cycles(graph, length_bound=8), 1):
+                for node in cycle:
+                    cycle_participation[node] = cycle_participation.get(node, 0) + 1
+                if count >= max_cycles:
+                    logger.warning("circularity_cycle_cap_reached", max_cycles=max_cycles)
+                    break
+                if count % 5_000 == 0:
+                    if time.perf_counter() > deadline:
+                        logger.warning("circularity_timeout", cycles_found=count)
+                        break
+                    logger.debug("circularity_progress", cycles_found=count)
         except Exception:
             return scores
-
-        cycle_participation: dict[str, int] = {}
-        for cycle in cycles:
-            for node in cycle:
-                cycle_participation[node] = cycle_participation.get(node, 0) + 1
 
         if not cycle_participation:
             return scores
 
         max_part = max(cycle_participation.values())
-        for node, count in cycle_participation.items():
-            scores[node] = count / max_part if max_part > 0 else 0.0
+        for node, cnt in cycle_participation.items():
+            scores[node] = cnt / max_part if max_part > 0 else 0.0
 
         return scores
 
@@ -91,24 +119,34 @@ class FraudSpecificFeatureExtractor:
 
         return scores
 
-    def _compute_layering_depth(self, graph: nx.DiGraph) -> dict[str, int]:
+    def _compute_layering_depth(
+        self, graph: nx.DiGraph, *, timeout_s: float = 120.0
+    ) -> dict[str, int]:
         depths: dict[str, int] = {n: 0 for n in graph.nodes()}
+        candidates = [
+            n for n in graph.nodes() if graph.in_degree(n) > 0 and graph.out_degree(n) > 0
+        ]
+        deadline = time.perf_counter() + timeout_s
 
-        for node in graph.nodes():
-            if graph.in_degree(node) > 0 and graph.out_degree(node) > 0:
-                try:
-                    max_path = 0
-                    for successor in graph.successors(node):
-                        paths = nx.all_simple_paths(graph, node, successor, cutoff=7)
-                        for path in paths:
-                            max_path = max(max_path, len(path) - 1)
-                            if max_path >= 7:
-                                break
+        for processed, node in enumerate(candidates, 1):
+            try:
+                max_path = 0
+                for successor in graph.successors(node):
+                    for path in nx.all_simple_paths(graph, node, successor, cutoff=7):
+                        max_path = max(max_path, len(path) - 1)
                         if max_path >= 7:
                             break
-                    depths[node] = max_path
-                except (nx.NetworkXError, StopIteration):
-                    pass
+                    if max_path >= 7:
+                        break
+                depths[node] = max_path
+            except (nx.NetworkXError, StopIteration):
+                pass
+
+            if processed % 2_000 == 0:
+                if time.perf_counter() > deadline:
+                    logger.warning("layering_timeout", processed=processed, total=len(candidates))
+                    break
+                logger.debug("layering_progress", processed=processed, total=len(candidates))
 
         return depths
 
@@ -160,7 +198,7 @@ class FraudSpecificFeatureExtractor:
         )
 
         max_count = result["device_count"].max()
-        if max_count is None or int(max_count) <= 1:
+        if max_count is None or int(max_count) <= 1:  # pyright: ignore[reportArgumentType]
             return {}
 
         scores: dict[str, float] = {}
@@ -169,12 +207,16 @@ class FraudSpecificFeatureExtractor:
 
         return scores
 
-    def _compute_suspicious_chain_length(self, graph: nx.DiGraph) -> dict[str, int]:
+    def _compute_suspicious_chain_length(
+        self, graph: nx.DiGraph, *, timeout_s: float = 60.0
+    ) -> dict[str, int]:
         chain_lengths: dict[str, int] = {n: 0 for n in graph.nodes()}
 
         sources = [n for n in graph.nodes() if graph.in_degree(n) == 0 and graph.out_degree(n) > 0]
         sinks = [n for n in graph.nodes() if graph.out_degree(n) == 0 and graph.in_degree(n) > 0]
 
+        deadline = time.perf_counter() + timeout_s
+        pairs_checked = 0
         for source in sources[:50]:
             for sink in sinks[:50]:
                 try:
@@ -185,5 +227,9 @@ class FraudSpecificFeatureExtractor:
                         break
                 except (nx.NetworkXNoPath, nx.NodeNotFound):
                     continue
+                pairs_checked += 1
+                if pairs_checked % 100 == 0 and time.perf_counter() > deadline:
+                    logger.warning("chain_length_timeout", pairs_checked=pairs_checked)
+                    return chain_lengths
 
         return chain_lengths

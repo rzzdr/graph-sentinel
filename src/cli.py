@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import click
@@ -9,15 +10,38 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-@click.group()  # type: ignore[misc]
-def cli() -> None:
-    """Graph Sentinel: Graph-based mule account detection."""
+def _setup_logging(log_dir: Path | None = None) -> Path | None:
+    """Configure structlog with both console and file output."""
+    log_file = None
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+
+    if log_dir is not None:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "graph_sentinel.log"
+        handlers.append(logging.FileHandler(str(log_file)))
+
+    logging.basicConfig(
+        format="%(message)s",
+        level=logging.DEBUG,
+        handlers=handlers,
+        force=True,
+    )
+
     structlog.configure(
         processors=[
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.dev.ConsoleRenderer(),
         ],
+        wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
+        logger_factory=structlog.stdlib.LoggerFactory(),
     )
+    return log_file
+
+
+@click.group()  # type: ignore[misc]
+def cli() -> None:
+    """Graph Sentinel: Graph-based mule account detection."""
+    _setup_logging()
 
 
 @cli.command()  # type: ignore[misc]
@@ -93,6 +117,11 @@ def evaluate(
         data_dir=Path(data_dir), output_dir=Path(output_dir), models_dir=Path(models_dir)
     )
     settings.ensure_dirs()
+
+    log_file = _setup_logging(log_dir=settings.output_dir)
+    if log_file:
+        click.echo(f"Logging to {log_file}")
+
     model_path = Path(models_dir)
 
     click.echo("Loading data...")
