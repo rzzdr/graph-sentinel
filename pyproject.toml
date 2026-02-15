@@ -1,0 +1,120 @@
+[tool.poetry]
+name = "graph-sentinel"
+version = "0.1.0"
+description = "Production-grade graph-based mule account detection with synthetic financial transaction simulation"
+authors = ["Graph Sentinel Team"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.scripts]
+gs-simulate = "src.cli:run_simulation"
+gs-evaluate = "src.cli:run_evaluation"
+gs-serve = "src.cli:run_server"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+polars = "^1.0"
+networkx = "^3.2"
+neo4j = "^5.15"
+fastapi = "^0.115"
+uvicorn = {extras = ["standard"], version = "^0.32"}
+pydantic = "^2.5"
+pydantic-settings = "^2.1"
+sqlalchemy = "^2.0"
+asyncpg = "^0.30"
+redis = "^5.0"
+numpy = "^1.26"
+scipy = "^1.12"
+scikit-learn = "^1.4"
+xgboost = "^2.0"
+lightgbm = "^4.2"
+shap = "^0.44"
+plotly = "^5.18"
+pyvis = "^0.3"
+matplotlib = "^3.8"
+structlog = "^24.1"
+click = "^8.1"
+tqdm = "^4.66"
+powerlaw = "^1.5"
+pandas = "^2.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-asyncio = "^0.24"
+pytest-cov = "^6.0"
+ruff = "^0.8"
+mypy = "^1.8"
+pre-commit = "^4.0"
+httpx = "^0.28"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "N803",  # argument name should be lowercase (ML convention: X_train, X_val)
+    "N806",  # variable name should be lowercase (ML convention: X, G)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/api/schemas.py" = ["TC003"]
+"src/ingestion/schema.py" = ["TC003"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = ["pydantic.BaseModel"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_any_generics = false
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = [
+    "networkx.*",
+    "neo4j.*",
+    "pyvis.*",
+    "shap.*",
+    "xgboost.*",
+    "lightgbm.*",
+    "powerlaw.*",
+    "plotly.*",
+    "sklearn.*",
+    "scipy.*",
+    "tqdm",
+    "matplotlib.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks integration tests requiring external services",
+]
