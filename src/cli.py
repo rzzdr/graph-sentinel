@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import json
 import logging
 from pathlib import Path
@@ -178,12 +179,20 @@ def evaluate(
         graph_clf.save(graph_clf_path)
     graph_scores = graph_clf.predict(embeddings)
 
+    # Free graph + embeddings — no longer needed (~3-4 GB)
+    del graph, embeddings, emb_engine, graph_clf
+    gc.collect()
+
     click.echo("Building behavioral sequences...")
     from src.sequence.builder import SequenceBuilder
     from src.sequence.encoder import SequenceEncoder
 
     seq_builder = SequenceBuilder(max_seq_len=settings.sequence.max_seq_len)
     sequences = seq_builder.build_sequences(transactions)
+
+    # Free transactions — no longer needed (~800 MB)
+    del transactions
+    gc.collect()
 
     seq_encoder_path = model_path / "sequence_encoder.joblib"
     if load_models and seq_encoder_path.exists():
@@ -194,6 +203,10 @@ def evaluate(
         seq_encoder.fit(sequences)
         seq_encoder.save(seq_encoder_path)
     sequence_anomaly_scores = seq_encoder.compute_anomaly_scores(sequences)
+
+    # Free sequences + encoder — no longer needed (~200 MB)
+    del sequences, seq_encoder
+    gc.collect()
 
     click.echo("Computing risk scores...")
     engine = RiskScoringEngine(settings.scoring)

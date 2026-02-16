@@ -21,7 +21,8 @@ class StructuralFeatureExtractor:
         weighted_in = dict(graph.in_degree(weight="weight"))
         weighted_out = dict(graph.out_degree(weight="weight"))
 
-        undirected = graph.to_undirected()
+        # Use a view to avoid copying the full graph (~2-3 GB for 50k/1.6M)
+        undirected = graph.to_undirected(as_view=True)
         try:
             betweenness = nx.betweenness_centrality(graph, k=min(500, len(nodes)))
         except Exception:

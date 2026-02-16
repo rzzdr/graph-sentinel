@@ -38,7 +38,7 @@ class GraphEmbeddingEngine:
         return combined
 
     def _spectral_embedding(self, graph: nx.DiGraph, nodes: list[str]) -> dict[str, np.ndarray]:
-        undirected = graph.to_undirected()
+        undirected = graph.to_undirected(as_view=True)
         half = self.embedding_dim // 2
         k = min(half, len(nodes) - 1)
 
@@ -49,7 +49,12 @@ class GraphEmbeddingEngine:
             laplacian = nx.normalized_laplacian_matrix(undirected, nodelist=nodes)
             from scipy.sparse.linalg import eigsh
 
-            _eigenvalues, eigenvectors = eigsh(laplacian, k=k, which="SM", tol=int(1e-4))
+            # SA (smallest algebraic) uses standard Lanczos — no LU factorization.
+            # SM (smallest magnitude) uses shift-invert mode which requires an
+            # expensive sparse LU decomposition (~2-5 GB fill-in for 50k nodes).
+            # Since the Laplacian has only non-negative eigenvalues, SA == SM.
+            # Also: int(1e-4) == 0 (truncation bug), use float tol directly.
+            _eigenvalues, eigenvectors = eigsh(laplacian, k=k, which="SA", tol=1e-4)  # pyright: ignore[reportArgumentType]
 
             result: dict[str, np.ndarray] = {}
             for i, node in enumerate(nodes):
@@ -69,29 +74,39 @@ class GraphEmbeddingEngine:
 
         from scipy import sparse
 
-        rows: list[int] = []
-        cols: list[int] = []
-        vals: list[float] = []
+        # Process walks in batches to avoid OOM from huge Python lists.
+        # 50k nodes x 10 walks x 40 length x ~10 pairs = 200M entries (~20 GB)
+        # if accumulated all at once. Batches of 1000 nodes keep peak at ~400 MB.
+        batch_size = 1000
+        cooccurrence = sparse.csr_matrix((n, n), dtype=np.float64)
 
-        for node in nodes:
-            for _ in range(self.num_walks):
-                walk = self._do_walk(graph, node)
-                idx_walk = [node_idx[w] for w in walk if w in node_idx]
-                for i, wi in enumerate(idx_walk):
-                    window = idx_walk[max(0, i - 5) : i + 6]
-                    for wj in window:
-                        if wi != wj:
-                            rows.append(wi)
-                            cols.append(wj)
-                            vals.append(1.0)
+        for batch_start in range(0, n, batch_size):
+            batch_nodes = nodes[batch_start : batch_start + batch_size]
+            rows: list[int] = []
+            cols: list[int] = []
+            vals: list[float] = []
 
-        cooccurrence = sparse.coo_matrix((vals, (rows, cols)), shape=(n, n)).tocsr()
+            for node in batch_nodes:
+                for _ in range(self.num_walks):
+                    walk = self._do_walk(graph, node)
+                    idx_walk = [node_idx[w] for w in walk if w in node_idx]
+                    for i, wi in enumerate(idx_walk):
+                        window = idx_walk[max(0, i - 5) : i + 6]
+                        for wj in window:
+                            if wi != wj:
+                                rows.append(wi)
+                                cols.append(wj)
+                                vals.append(1.0)
+
+            batch_matrix = sparse.coo_matrix((vals, (rows, cols)), shape=(n, n)).tocsr()
+            cooccurrence = cooccurrence + batch_matrix
+
         cooccurrence.data = np.log1p(cooccurrence.data)
 
         try:
             from sklearn.decomposition import TruncatedSVD
 
-            k = min(dim, n - 1, cooccurrence.shape[1])
+            k = min(dim, n - 1, cooccurrence.shape[1])  # pyright: ignore[reportOptionalSubscript]
             if k < 1:
                 return {nd: np.zeros(dim) for nd in nodes}
 

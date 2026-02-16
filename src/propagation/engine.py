@@ -174,7 +174,8 @@ class RiskPropagationEngine:
         """Apply additional decay based on shortest-path distance from seeds."""
         import networkx as _nx
 
-        undirected = graph.to_undirected()
+        # Use a view to avoid copying the full graph (~2-3 GB for 50k/1.6M)
+        undirected = graph.to_undirected(as_view=True)
 
         seed_nodes = [n for n in seeds if n in node_idx]
         if not seed_nodes:
