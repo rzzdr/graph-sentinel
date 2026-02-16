@@ -44,6 +44,7 @@ class SequenceEncoder:
 
         self._scaler = StandardScaler()
         X_scaled = self._scaler.fit_transform(X)
+        np.nan_to_num(X_scaled, copy=False, nan=0.0)
 
         self.encoder = TruncatedSVD(n_components=n_components, random_state=42)
         self.encoder.fit(X_scaled)
@@ -65,6 +66,7 @@ class SequenceEncoder:
 
         X = self._flatten_sequences(sequences)
         X_scaled = self._scaler.transform(X)
+        np.nan_to_num(X_scaled, copy=False, nan=0.0)
         embeddings_matrix = self.encoder.transform(X_scaled)
 
         result: dict[str, np.ndarray] = {}
@@ -83,6 +85,7 @@ class SequenceEncoder:
 
         X = self._flatten_sequences(sequences)
         X_scaled = self._scaler.transform(X)
+        np.nan_to_num(X_scaled, copy=False, nan=0.0)
         reduced = self.encoder.transform(X_scaled)
         reconstructed = self.encoder.inverse_transform(reduced)
 
