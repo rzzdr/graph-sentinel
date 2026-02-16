@@ -7,6 +7,7 @@ import structlog
 
 if TYPE_CHECKING:
     import networkx as nx
+    from scipy import sparse
 
 logger = structlog.get_logger(__name__)
 
@@ -123,11 +124,11 @@ class RiskPropagationEngine:
         graph: nx.DiGraph,
         nodes: list[str],
         node_idx: dict[str, int],
-    ) -> np.ndarray:
+    ) -> sparse.csc_matrix:
         """Build a column-normalized transition matrix with edge-weight awareness.
 
-        Uses sparse representation internally for memory efficiency on large graphs,
-        converting to dense only for the final matrix-vector products.
+        Uses sparse representation throughout for memory efficiency on large graphs.
+        A 50k-node graph needs ~25 MB sparse vs ~20 GB dense.
         """
         from scipy import sparse
 
@@ -152,14 +153,13 @@ class RiskPropagationEngine:
                 cols.append(rj)
                 vals.append(edge_strength * 0.5)
 
+        # COO automatically sums duplicate entries when converted to CSC
         W = sparse.coo_matrix((vals, (rows, cols)), shape=(n, n)).tocsc()
 
-        # For duplicate entries (same row/col added twice), sum them
-        W = W.toarray()
-
-        col_sums = W.sum(axis=0)
+        col_sums = np.asarray(W.sum(axis=0)).ravel()
         col_sums[col_sums == 0] = 1.0
-        W = W / col_sums
+        # Normalize columns using efficient sparse diagonal multiplication
+        W = W @ sparse.diags(1.0 / col_sums)
 
         return W
 
